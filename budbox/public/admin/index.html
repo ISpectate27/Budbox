@@ -1,0 +1,162 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<title>BUDBOX — Orders</title>
+<style>
+:root{--bg:#090909;--panel:#121212;--line:#2b2b2b;--text:#f5f5f5;--muted:#a5a5a5;--accent:#d8ff55}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:Inter,Arial,sans-serif}button,input{font:inherit}button{cursor:pointer}a{color:inherit}
+.top{position:sticky;top:0;z-index:3;background:#090909ed;backdrop-filter:blur(12px);border-bottom:1px solid var(--line)}
+.bar{max-width:980px;margin:auto;padding:15px 18px;display:flex;align-items:center;gap:14px}
+.logo{font-weight:1000;letter-spacing:-.08em;font-size:24px}.logo span{color:var(--accent)}
+.tagline{font-size:10px;letter-spacing:.18em;color:var(--accent);font-weight:900;text-transform:uppercase}
+.sp{margin-left:auto}.btn{background:transparent;border:1px solid #444;color:#fff;padding:9px 12px;font-size:11px;font-weight:800;letter-spacing:.06em;border-radius:3px;text-decoration:none;display:inline-block}
+.btn:hover{border-color:var(--accent);color:var(--accent)}.btn.pri{background:var(--accent);border-color:var(--accent);color:#111}.btn.pri:hover{color:#111;opacity:.9}
+main{max-width:980px;margin:auto;padding:22px 18px 60px}
+.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:18px}
+.stat{background:var(--panel);border:1px solid var(--line);padding:14px}.stat b{display:block;font-size:24px;letter-spacing:-.04em}.stat span{font-size:10px;letter-spacing:.14em;color:var(--muted);text-transform:uppercase;font-weight:900}
+.filters{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:18px}
+.filter{background:transparent;border:1px solid #3a3a3a;color:#ccc;padding:8px 12px;font-size:11px;text-transform:uppercase;letter-spacing:.08em}.filter.active,.filter:hover{background:var(--accent);border-color:var(--accent);color:#111}
+.order{background:var(--panel);border:1px solid var(--line);padding:16px;margin-bottom:12px}
+.order.s-new{border-left:3px solid var(--accent)}.order.s-cancelled{opacity:.55}
+.oh{display:flex;justify-content:space-between;gap:10px;align-items:flex-start;flex-wrap:wrap}
+.oid{font-size:10px;letter-spacing:.15em;color:var(--muted);font-weight:900}.oname{font-size:19px;font-weight:900;letter-spacing:-.03em;margin:4px 0}
+.badge{font-size:9px;letter-spacing:.14em;font-weight:900;text-transform:uppercase;padding:6px 9px;background:#222;border:1px solid #3a3a3a}
+.badge.new{background:var(--accent);color:#111;border-color:var(--accent)}.badge.paid,.badge.delivered{color:var(--accent);border-color:var(--accent)}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:12px}
+.lbl{font-size:9px;letter-spacing:.15em;color:var(--accent);font-weight:900;text-transform:uppercase;margin-bottom:5px}
+.val{font-size:13px;line-height:1.6;color:#ddd;word-break:break-word}.val a{color:#fff;text-decoration:underline;text-decoration-color:#555}
+.items div{display:flex;justify-content:space-between;gap:10px;font-size:13px;padding:3px 0;border-bottom:1px dashed #2a2a2a}
+.total{display:flex;justify-content:space-between;font-weight:900;font-size:17px;margin-top:8px}
+.acts{display:flex;gap:7px;flex-wrap:wrap;margin-top:14px;padding-top:14px;border-top:1px solid var(--line)}
+.acts .btn{padding:8px 10px}.acts .del{margin-left:auto;color:#ff8a8a;border-color:#553}
+.empty{color:var(--muted);text-align:center;padding:60px 0;font-size:13px}
+.login{max-width:360px;margin:12vh auto;padding:0 18px}.login h1{font-size:34px;letter-spacing:-.07em;margin:6px 0 20px}
+.login label{display:block;font-size:10px;letter-spacing:.14em;color:var(--accent);font-weight:900;text-transform:uppercase;margin:14px 0 6px}
+.login input{width:100%;background:#202020;color:#eee;border:1px solid #3a3a3a;padding:12px;font-size:14px;border-radius:2px}
+.login .btn{width:100%;margin-top:18px;padding:13px}.err{color:#ff8a8a;font-size:12px;margin-top:12px;min-height:16px}
+.toast{position:fixed;bottom:20px;left:50%;transform:translate(-50%,100px);background:var(--accent);color:#111;padding:11px 16px;font-size:12px;font-weight:900;transition:transform .2s;z-index:9}.toast.show{transform:translate(-50%,0)}
+@media(max-width:640px){.stats{grid-template-columns:repeat(2,1fr)}.grid2{grid-template-columns:1fr}.tagline{display:none}}
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div class="toast" id="toast"></div>
+<script>
+const $app = document.getElementById('app');
+const STATUS = ['new', 'confirmed', 'paid', 'delivered', 'cancelled'];
+const money = n => '$' + Number(n).toFixed(2);
+let orders = [], filter = 'all', timer = null, lastNew = null;
+
+function el(tag, props, ...kids) {
+  const e = document.createElement(tag);
+  for (const k in (props || {})) {
+    if (k === 'class') e.className = props[k];
+    else if (k === 'on') for (const ev in props.on) e.addEventListener(ev, props.on[ev]);
+    else e.setAttribute(k, props[k]);
+  }
+  kids.flat().forEach(c => { if (c != null && c !== false) e.append(c.nodeType ? c : document.createTextNode(c)); });
+  return e;
+}
+function toast(msg) { const t = document.getElementById('toast'); t.textContent = msg; t.classList.add('show'); setTimeout(() => t.classList.remove('show'), 1800); }
+async function api(path, method, body) {
+  const r = await fetch(path, { method: method || 'GET', headers: body ? { 'Content-Type': 'application/json' } : {}, body: body ? JSON.stringify(body) : undefined, credentials: 'same-origin' });
+  const data = await r.json().catch(() => ({}));
+  if (r.status === 401 && !path.endsWith('/login')) { showLogin(); throw new Error('auth'); }
+  if (!r.ok) throw new Error(data.error || 'Request failed');
+  return data;
+}
+
+/* ---------- login ---------- */
+function showLogin() {
+  clearInterval(timer); document.title = 'BUDBOX — Sign in';
+  const err = el('div', { class: 'err' });
+  const email = el('input', { type: 'email', autocomplete: 'username', required: '' });
+  const pass = el('input', { type: 'password', autocomplete: 'current-password', required: '' });
+  const form = el('form', { on: { submit: async e => {
+    e.preventDefault(); err.textContent = '';
+    try { await api('/api/admin/login', 'POST', { email: email.value, password: pass.value }); load(true); }
+    catch (x) { err.textContent = x.message; }
+  } } },
+    el('label', {}, 'Email'), email, el('label', {}, 'Password'), pass,
+    el('button', { class: 'btn pri', type: 'submit' }, 'SIGN IN ↗'), err);
+  $app.replaceChildren(el('div', { class: 'login' }, el('div', { class: 'logo' }, 'BUD', el('span', {}, 'BOX'), '.'), el('h1', {}, 'Order dashboard'), form));
+  email.focus();
+}
+
+/* ---------- dashboard ---------- */
+async function load(first) {
+  try {
+    const d = await api('/api/admin/orders');
+    const prevNew = lastNew;
+    orders = d.orders;
+    const nNew = orders.filter(o => o.status === 'new').length;
+    if (prevNew !== null && nNew > prevNew) toast('🌸 NEW ORDER');
+    lastNew = nNew;
+    render();
+    if (first) { clearInterval(timer); timer = setInterval(() => load(false), 15000); }
+  } catch (e) { if (e.message !== 'auth') toast(e.message); }
+}
+function render() {
+  const nNew = orders.filter(o => o.status === 'new').length;
+  document.title = (nNew ? '(' + nNew + ') ' : '') + 'BUDBOX — Orders';
+  const today = new Date().toDateString();
+  const active = orders.filter(o => o.status !== 'cancelled');
+  const todays = active.filter(o => new Date(o.createdAt).toDateString() === today);
+  const stats = el('div', { class: 'stats' },
+    stat(nNew, 'New orders'),
+    stat(orders.filter(o => o.status === 'confirmed' || o.status === 'paid').length, 'To deliver'),
+    stat(todays.length, 'Orders today'),
+    stat(money(todays.reduce((s, o) => s + o.total, 0)), 'Sales today'));
+  const counts = s => s === 'all' ? orders.length : orders.filter(o => o.status === s).length;
+  const filters = el('div', { class: 'filters' }, ['all', ...STATUS].map(s =>
+    el('button', { class: 'filter' + (filter === s ? ' active' : ''), on: { click: () => { filter = s; render(); } } }, s + ' (' + counts(s) + ')')));
+  const list = orders.filter(o => filter === 'all' || o.status === filter);
+  $app.replaceChildren(
+    el('div', { class: 'top' }, el('div', { class: 'bar' },
+      el('div', { class: 'logo' }, 'BUD', el('span', {}, 'BOX'), '.'), el('div', { class: 'tagline' }, 'Order dashboard'),
+      el('div', { class: 'sp' }), el('button', { class: 'btn', on: { click: () => load(false) } }, 'REFRESH'),
+      el('button', { class: 'btn', on: { click: async () => { await api('/api/admin/logout', 'POST', {}).catch(() => {}); showLogin(); } } }, 'LOG OUT'))),
+    el('main', {}, stats, filters, list.length ? list.map(card) : el('div', { class: 'empty' }, 'No orders here yet.')));
+}
+const stat = (v, l) => el('div', { class: 'stat' }, el('b', {}, String(v)), el('span', {}, l));
+
+function card(o) {
+  const when = new Date(o.createdAt).toLocaleString([], { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+  const tel = o.phone.replace(/[^\d+]/g, '');
+  const fullAddr = o.address + ', ' + o.city + ', ON';
+  const msg = 'Hi ' + o.name.split(' ')[0] + ', it’s BUDBOX. We got your order (' + money(o.total) + '). Please send the e-transfer and we’ll get your delivery on the way. Thank you!';
+  const setStatus = async s => { try { await api('/api/admin/orders/' + o.id, 'PATCH', { status: s }); await load(false); } catch (e) { if (e.message !== 'auth') toast(e.message); } };
+  return el('div', { class: 'order s-' + o.status },
+    el('div', { class: 'oh' },
+      el('div', {}, el('div', { class: 'oid' }, '#' + o.id.toUpperCase() + ' · ' + when), el('div', { class: 'oname' }, o.name)),
+      el('span', { class: 'badge ' + o.status }, o.status)),
+    el('div', { class: 'grid2' },
+      el('div', {},
+        el('div', { class: 'lbl' }, 'Order'),
+        el('div', { class: 'items' }, o.items.map(i => el('div', {}, el('span', {}, i.qty + ' × ' + i.name + ' — ' + i.size), el('span', {}, money(i.price * i.qty))))),
+        el('div', { class: 'total' }, el('span', {}, 'Total'), el('span', {}, money(o.total)))),
+      el('div', {},
+        el('div', { class: 'lbl' }, 'Customer'),
+        el('div', { class: 'val' },
+          el('a', { href: 'tel:' + tel }, o.phone), el('br'),
+          el('a', { href: 'https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent(fullAddr), target: '_blank', rel: 'noopener noreferrer' }, fullAddr), el('br'),
+          'When: ' + (o.when || 'Any time'), el('br'),
+          'Notes: ' + (o.notes || '—')))),
+    el('div', { class: 'acts' },
+      o.status === 'new' && el('button', { class: 'btn pri', on: { click: () => setStatus('confirmed') } }, 'CONFIRM'),
+      o.status === 'confirmed' && el('button', { class: 'btn pri', on: { click: () => setStatus('paid') } }, 'MARK PAID'),
+      (o.status === 'paid' || o.status === 'confirmed') && el('button', { class: 'btn', on: { click: () => setStatus('delivered') } }, 'DELIVERED'),
+      o.status !== 'new' && el('button', { class: 'btn', on: { click: () => setStatus('new') } }, 'SET NEW'),
+      o.status !== 'cancelled' && el('button', { class: 'btn', on: { click: () => setStatus('cancelled') } }, 'CANCEL'),
+      el('a', { class: 'btn', href: 'sms:' + tel + '?&body=' + encodeURIComponent(msg) }, 'TEXT CUSTOMER'),
+      el('a', { class: 'btn', href: 'tel:' + tel }, 'CALL'),
+      el('button', { class: 'btn del', on: { click: async () => { if (confirm('Delete this order permanently?')) { try { await api('/api/admin/orders/' + o.id, 'DELETE', {}); await load(false); } catch (e) { if (e.message !== 'auth') toast(e.message); } } } } }, 'DELETE')));
+}
+
+load(true);
+</script>
+</body>
+</html>
